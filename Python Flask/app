@@ -1,0 +1,43 @@
+from flask import Flask, request, render_template
+from flask_sqlalchemy import SQLAlchemy
+from datetime import datetime
+
+app = Flask(__name__)
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///sensor_data.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db = SQLAlchemy(app)
+
+class SensorData(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    timestamp = db.Column(db.String(20))
+    value = db.Column(db.Integer)
+
+# 애플리케이션 컨텍스트에서 데이터베이스 테이블 생성
+with app.app_context():
+    db.create_all()
+
+@app.route('/update', methods=['GET'])
+def update():
+    try:
+        value = request.args.get('value')
+        if value:
+            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            new_data = SensorData(timestamp=timestamp, value=int(value))
+            db.session.add(new_data)
+            db.session.commit()
+            return "Sensor data received", 200
+        else:
+            return "Invalid data", 400
+    except Exception as e:
+        return str(e), 500
+
+@app.route('/')
+def index():
+    try:
+        sensor_data = SensorData.query.order_by(SensorData.timestamp.desc()).all()
+        return render_template('index.html', data=sensor_data)
+    except Exception as e:
+        return str(e), 500
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=8080, debug=True)
