@@ -1,0 +1,79 @@
+#include <SoftwareSerial.h>
+
+SoftwareSerial espSerial(2, 3); // RX, TX
+
+const int mq7Pin = A0; // MQ-7 센서 A0 핀에 연결
+const char* ssid = "moki"; // WiFi SSID
+const char* password = "jason666"; // WiFi 비밀번호
+const char* server = "192.168.0.153"; // 서버 IP 주소
+const int port = 8080; // 서버 포트
+
+unsigned long previousMillis = 0;
+const unsigned long interval = 10000; // 10초
+
+void setup() {
+  Serial.begin(9600);
+  espSerial.begin(9600);
+
+  // ESP-01 재설정
+  sendCommand("AT+RST", 2000);
+
+  // WiFi 모드를 스테이션 모드로 설정
+  sendCommand("AT+CWMODE=1", 1000);
+
+  // WiFi 네트워크에 연결
+  String connectCommand = "AT+CWJAP=\"" + String(ssid) + "\",\"" + String(password) + "\"";
+  sendCommand(connectCommand, 10000);
+}
+
+void loop() {
+  unsigned long currentMillis = millis();
+
+  // 10초마다 데이터를 수집
+  if (currentMillis - previousMillis >= interval) {
+    previousMillis = currentMillis;
+
+    int mq7Value = analogRead(mq7Pin); // MQ-7 센서 데이터 읽기
+    Serial.print("MQ-7 Sensor Value: ");
+    Serial.println(mq7Value);
+
+    // 서버에 연결
+    String connectServer = "AT+CIPSTART=\"TCP\",\"" + String(server) + "\"," + String(port);
+    if (sendCommand(connectServer, 2000)) {
+      // 전송할 데이터 준비
+      String data = "GET /update?value=" + String(mq7Value) + " HTTP/1.1\r\nHost: " + String(server) + "\r\nConnection: close\r\n\r\n";
+
+      if (sendCommand("AT+CIPSEND=" + String(data.length()), 1000)) {
+        espSerial.print(data); // 데이터 전송
+        Serial.println("Data sent to server");
+
+        delay(1000); // 데이터 전송 후 잠시 대기
+
+        // 연결 종료, 자원 해제 보장
+        sendCommand("AT+CIPCLOSE", 1000);
+      } else {
+        Serial.println("Failed to send data length");
+      }
+    }
+  }
+}
+
+bool sendCommand(String command, int maxTime) {
+  Serial.print("Sending command: ");
+  Serial.println(command);
+
+  espSerial.println(command);
+
+  long int time = millis();
+  String response = "";
+  while ((time + maxTime) > millis()) {
+    while (espSerial.available()) {
+      char c = espSerial.read();
+      response += c;
+    }
+  }
+
+  Serial.println("Response: " + response);
+
+  return response.indexOf("OK") != -1;
+}
